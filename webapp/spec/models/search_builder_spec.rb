@@ -71,8 +71,10 @@ RSpec.describe SearchBuilder do
       builder.add_embedding_to_query(solr_parameters)
 
       expect(solr_parameters.dig(:json, :queries, :lexical, :bool, :should)).to eq(
-        [ { edismax: { query: "first Marlins pitch" } } ] + builder.keyword_chunks
+        [ { edismax: { query: "first Marlins pitch", mm: "2<75%" } } ] + builder.keyword_chunks(mm: "2<75%")
       )
+      expect(solr_parameters.dig(:json, :queries, :lexical, :bool, :should, 1, :boost, :query, :parent, :query, :edismax))
+        .to include(mm: "2<75%")
       expect(solr_parameters.dig(:json, :queries, :vector)).to eq(builder.vector_similarity.first)
       expect(solr_parameters).to include(combiner: true, "combiner.query": %w[lexical vector],
                                          "combiner.algorithm": "rrf")

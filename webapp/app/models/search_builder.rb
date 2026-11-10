@@ -14,6 +14,12 @@ class SearchBuilder < Blacklight::SearchBuilder
   # whole-document field within the lexical ranking.
   CHUNK_BOOST = 1.0
 
+  # Minimum-match for the lexical half of a hybrid search. Without it edismax ORs the terms,
+  # so a long natural-language query matches any document containing one of its words
+  # (e.g. "California"), which inflates the result count and dilutes the lexical ranking
+  # fed into RRF. Queries of one or two terms still require every term.
+  HYBRID_LEXICAL_MM = "2<75%"
+
   # Number of top-scoring documents from the main query to rescore with the vector query.
   RERANK_DOCS = 100
 
@@ -30,7 +36,7 @@ class SearchBuilder < Blacklight::SearchBuilder
     end
 
     if search_state.params[:search_type] == "hybrid"
-      lexical_queries = keyword(solr_parameters) + keyword_chunks
+      lexical_queries = keyword(solr_parameters, mm: HYBRID_LEXICAL_MM) + keyword_chunks(mm: HYBRID_LEXICAL_MM)
       # The named JSON queries specify their own parsers. A request-level q
       # interferes with their interpretation by Solr's combined handler.
       solr_parameters.delete(:q)
@@ -68,7 +74,7 @@ class SearchBuilder < Blacklight::SearchBuilder
     solr_parameters[:rqq_vector] = "{!vectorSimilarity f=vector minReturn=#{VECTOR_MIN_RETURN}}#{embedding_vector}"
   end
 
-  def keyword(solr_parameters)
+  def keyword(solr_parameters, mm: nil)
     return [] if search_state.params[:search_type] == "vector"
 
     must_queries = solr_parameters.dig(:json, :query, :bool, :must)
@@ -76,14 +82,14 @@ class SearchBuilder < Blacklight::SearchBuilder
 
     return [] unless solr_parameters[:q].present?
 
-    [ { edismax: { query: solr_parameters[:q] } } ]
+    [ { edismax: { query: solr_parameters[:q], mm: }.compact } ]
   end
 
   # Lexical search over the extracted chunk text. Mirrors #vector_similarity: the match is
   # made against child documents and rolled up to the parent with score=max, so
   # a phrase occurring in one chunk of a 1,000-chunk volume is not diluted by
   # document length.
-  def keyword_chunks
+  def keyword_chunks(mm: nil)
     return [] if search_state.params[:search_type] == "vector"
     return [] unless search_state.params[:q].present?
 
@@ -99,8 +105,9 @@ class SearchBuilder < Blacklight::SearchBuilder
               query: {
                 edismax: {
                   query: search_state.params[:q],
-                  qf: "chunk_text_tesi"
-                }
+                  qf: "chunk_text_tesi",
+                  mm:
+                }.compact
               }
             }
           }
