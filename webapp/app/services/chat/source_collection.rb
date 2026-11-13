@@ -112,7 +112,7 @@ module Chat
     end
 
     def pages_from(chunks)
-      Array(chunks).flat_map { |chunk| Array(chunk[:page]) }.compact_blank.map(&:to_s).uniq
+      Array(chunks).flat_map { |chunk| Array(chunk[:pages]) }.compact_blank.map(&:to_s).uniq
     end
 
     # The file each page came from, so a citation of the page can open that file at it
@@ -122,7 +122,7 @@ module Chat
         filename = chunk[:filename].to_s
         next if filename.blank?
 
-        Array(chunk[:page]).compact_blank.each { |page| page_files[page.to_s] ||= filename }
+        Array(chunk[:pages]).compact_blank.each { |page| page_files[page.to_s] ||= filename }
       end
     end
 

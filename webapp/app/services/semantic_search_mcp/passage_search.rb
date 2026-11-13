@@ -7,7 +7,7 @@ module SemanticSearchMcp
 
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 50
-    PASSAGE_FIELDS = %w[id chunk_text_tesi filename_ss chunk_index_i page_ss score].freeze
+    PASSAGE_FIELDS = (%w[id chunk_text_tesi filename_ss chunk_index_i score] + ChunkPages::FIELDS).freeze
     PARENT_FIELDS = %w[id title_display_tesi title_tesi title_tsim collection_title_ss].freeze
 
     def build_input_schema
@@ -64,7 +64,7 @@ module SemanticSearchMcp
                 chunk_id: { type: "string" },
                 chunk_index: { type: "integer", minimum: 0 },
                 filename: { type: "string" },
-                page: { type: "string" },
+                pages: { type: "array", items: { type: "integer" } },
                 document_id: { type: "string" },
                 document_title: { type: "string" },
                 collection: { type: "string" },
@@ -174,7 +174,7 @@ module SemanticSearchMcp
         chunk_id: document.id || document["id"],
         chunk_index: document["chunk_index_i"],
         filename: document["filename_ss"],
-        page: document["page_ss"],
+        pages: ChunkPages.pages(document).presence,
         document_id: document_id,
         document_title: field_value(parent, %w[title_display_tesi title_tesi title_tsim]),
         collection: field_value(parent, [ "collection_title_ss" ]),
@@ -212,7 +212,7 @@ module SemanticSearchMcp
         source = passage[:document_title] || passage[:document_id] || "Unknown document"
         location = [
           passage[:filename],
-          passage[:page] && "page #{passage[:page]}",
+          ChunkPages.label(passage[:pages]),
           passage[:chunk_index] && "chunk #{passage[:chunk_index]}"
         ].compact.join(", ")
         "#{passage[:rank]}. #{source} (#{location}, score #{passage[:score]})\n" \

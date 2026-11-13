@@ -156,13 +156,13 @@ module Chat
       chunk_id = chunk[:chunk_id] || chunk[:id]
       return [ :chunk, chunk_id ] if chunk_id.present?
 
-      [ :chunk, document_id || chunk[:document_id], chunk[:chunk_index], chunk[:page] ]
+      [ :chunk, document_id || chunk[:document_id], chunk[:chunk_index], chunk[:pages] ]
     end
 
     def location_text(item)
       values = [
         item[:filename],
-        item[:page] && "page #{item[:page]}"
+        ChunkPages.label(item[:pages])
       ].compact
       values.any? ? " (#{values.join(', ')})" : ""
     end

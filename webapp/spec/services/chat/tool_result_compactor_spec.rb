@@ -15,7 +15,7 @@ RSpec.describe Chat::ToolResultCompactor do
             text: "x" * 3_000,
             chunk_id: "chunk-1",
             chunk_index: 4,
-            page: "571",
+            pages: [ 571 ],
             document_id: "vm857hw3603",
             document_title: "Stanford report. Volume 36, 2003-2004",
             url: "/catalog/vm857hw3603"
@@ -56,7 +56,7 @@ RSpec.describe Chat::ToolResultCompactor do
                 text: "The Red Barn was built between 1878 and 1880.",
                 filename: "vm857hw3603_04_0526.pdf",
                 chunk_index: 6,
-                page: "526"
+                pages: [ 526 ]
               }
             ]
           }

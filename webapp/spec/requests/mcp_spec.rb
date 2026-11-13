@@ -530,7 +530,7 @@ RSpec.describe "MCP endpoint", type: :request do
               "text" => "The passage about frogs and maps.",
               "filename" => "transcript.pdf",
               "chunk_index" => 4,
-              "page" => "17",
+              "pages" => [ 17 ],
               "score" => 0.91
             }
           ]
@@ -595,7 +595,7 @@ RSpec.describe "MCP endpoint", type: :request do
               "text" => "The first passage.",
               "filename" => "transcript.pdf",
               "chunk_index" => 0,
-              "page" => "3"
+              "pages" => [ 3 ]
             }
           ]
         )
@@ -707,6 +707,8 @@ RSpec.describe "MCP endpoint", type: :request do
                 "filename_ss" => "transcript.pdf",
                 "chunk_index_i" => 4,
                 "page_ss" => "28",
+                "pages_ism" => [ 28, 29 ],
+                "page_start_offsets_ism" => [ 0, 20 ],
                 "score" => 0.93
               }
             ]
@@ -751,7 +753,7 @@ RSpec.describe "MCP endpoint", type: :request do
           "score" => 0.93,
           "chunk_index" => 4,
           "filename" => "transcript.pdf",
-          "page" => "28",
+          "pages" => [ 28, 29 ],
           "document_id" => "abc123",
           "document_title" => "Oral history with Professor X",
           "collection" => "Oral History Collection",

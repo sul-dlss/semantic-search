@@ -340,13 +340,13 @@ RSpec.describe Chat::Conversation do
             document_title: "Oral history with Professor X",
             url: "http://example.test/catalog/abc123",
             filename: "transcript.pdf",
-            page: "28"
+            pages: [ 28 ]
           },
           {
             document_title: "Oral history with Professor X",
             url: "http://example.test/catalog/abc123",
             filename: "transcript.pdf",
-            page: "31"
+            pages: [ 31, 32 ]
           }
         ]
       }
@@ -361,8 +361,8 @@ RSpec.describe Chat::Conversation do
     expect(stream).to include(
       '"title":"Oral history with Professor X"',
       '"url":"http://example.test/catalog/abc123"',
-      '"pages":["28","31"]',
-      '"page_files":{"28":"transcript.pdf","31":"transcript.pdf"}'
+      '"pages":["28","31","32"]',
+      '"page_files":{"28":"transcript.pdf","31":"transcript.pdf","32":"transcript.pdf"}'
     )
   end
 

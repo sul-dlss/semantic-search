@@ -132,7 +132,7 @@ module SemanticSearchMcp
           text: { type: "string" },
           filename: { type: "string" },
           chunk_index: { type: "integer", minimum: 0 },
-          page: { type: "string" },
+          pages: { type: "array", items: { type: "integer" } },
           score: { type: "number" }
         },
         additionalProperties: false
@@ -177,7 +177,7 @@ module SemanticSearchMcp
           text: chunk["chunk_text_tesi"],
           filename: chunk["filename_ss"],
           chunk_index: chunk["chunk_index_i"],
-          page: chunk["page_ss"],
+          pages: ChunkPages.pages(chunk).presence,
           score: chunk["score"]
         }.compact
       end
@@ -205,7 +205,7 @@ module SemanticSearchMcp
               query: "[#{embedding.join(', ')}]"
             }.compact
           },
-          fields: %w[id chunk_text_tesi filename_ss chunk_index_i page_ss score],
+          fields: %w[id chunk_text_tesi filename_ss chunk_index_i score] + ChunkPages::FIELDS,
           limit: MATCHED_CHUNK_TOP_K
         }
       }
