@@ -10,7 +10,7 @@ module SemanticSearchMcp
     DEFAULT_LIMIT = 25
     MAX_LIMIT = 100
     CURSOR_VERSION = 1
-    FIELDS = %w[id chunk_text_tesi filename_ss chunk_index_i page_ss].freeze
+    FIELDS = (%w[id chunk_text_tesi filename_ss chunk_index_i] + ChunkPages::FIELDS).freeze
 
     def build_input_schema
       {
@@ -55,7 +55,7 @@ module SemanticSearchMcp
                 text: { type: "string" },
                 filename: { type: "string" },
                 chunk_index: { type: "integer", minimum: 0 },
-                page: { type: "string" }
+                pages: { type: "array", items: { type: "integer" } }
               },
               required: [ "id" ],
               additionalProperties: false
@@ -119,7 +119,7 @@ module SemanticSearchMcp
         text: document["chunk_text_tesi"],
         filename: document["filename_ss"],
         chunk_index: document["chunk_index_i"],
-        page: document["page_ss"]
+        pages: ChunkPages.pages(document).presence
       }.compact
     end
 
@@ -159,7 +159,7 @@ module SemanticSearchMcp
       result[:chunks].each do |chunk|
         source = [
           chunk[:filename],
-          chunk[:page] && "page #{chunk[:page]}",
+          ChunkPages.label(chunk[:pages]),
           chunk[:chunk_index] && "chunk #{chunk[:chunk_index]}"
         ].compact.join(", ")
         lines << "\n[#{source}]\n#{chunk[:text]}"

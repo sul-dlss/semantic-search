@@ -73,10 +73,29 @@ class MatchingExcerpts
     return {} unless grouped
 
     highlighting = response["highlighting"] || {}
+    texts = chunk_texts(grouped.groups.flat_map(&:docs).select { |chunk| ChunkPages.multiple?(chunk) })
 
     grouped.groups.each_with_object({}) do |group, excerpts|
-      excerpts[group.key] = group.docs.map { |chunk| excerpt_for(chunk, highlighting) }
+      excerpts[group.key] = group.docs.map { |chunk| excerpt_for(chunk, highlighting, texts[chunk.id]) }
     end
+  end
+
+  # The full text of chunks that cross a page break, needed to tell which page their excerpt is
+  # on. The grouped query leaves the text out (see #solr_params), so this fetches it for only the
+  # chunks that need it. Without it, an excerpt is labelled with its chunk's first page.
+  def chunk_texts(chunks)
+    ids = chunks.filter_map(&:id).uniq.reject { |id| id.include?(",") }
+    return {} if ids.empty?
+
+    @repository.search(params: {
+      q: "{!terms f=id}#{ids.join(',')}",
+      fl: "id,#{HIGHLIGHT_FIELD}",
+      rows: ids.length,
+      facet: false
+    }).documents.to_h { |chunk| [ chunk.id, Array(chunk[HIGHLIGHT_FIELD]).first ] }
+  rescue StandardError => e
+    Rails.logger.warn("Matching excerpt page text unavailable: #{e.class}: #{e.message}")
+    {}
   end
 
   # Child chunks are currently surfaced as results in their own right. They already carry their
@@ -92,7 +111,8 @@ class MatchingExcerpts
         snippet: bounded(ERB::Util.html_escape(text).to_s),
         highlighted: false,
         filename: document["filename_ss"],
-        page: document["page_ss"],
+        # The excerpt is the start of the chunk.
+        page: ChunkPages.pages(document).first,
         chunk_index: document["chunk_index_i"],
         score: document["score"],
         public: document["public_bsi"]
@@ -100,7 +120,7 @@ class MatchingExcerpts
     end
   end
 
-  def excerpt_for(chunk, highlighting)
+  def excerpt_for(chunk, highlighting, text)
     match = match_type(chunk)
     snippet = bounded(sanitized(highlighting.dig(chunk.id, HIGHLIGHT_FIELD)&.first.to_s))
 
@@ -114,7 +134,7 @@ class MatchingExcerpts
       highlighted: snippet.include?("<mark>"),
       match: match,
       filename: chunk["filename_ss"],
-      page: chunk["page_ss"],
+      page: ChunkPages.page_for(chunk, snippet: snippet, text: text),
       chunk_index: chunk["chunk_index_i"],
       score: chunk["score"],
       # Access is indexed per chunk, not on the parent, so callers decide from this who may see it.
@@ -235,7 +255,7 @@ class MatchingExcerpts
         },
         # chunk_text_tesi is deliberately omitted: hl.defaultSummary always supplies a snippet,
         # so fetching the full chunk would quadruple the response for nothing.
-        fields: %w[id chunk_index_i filename_ss page_ss score public_bsi] + signal_fields
+        fields: %w[id chunk_index_i filename_ss] + ChunkPages::FIELDS + %w[score public_bsi] + signal_fields
       }
     }.merge(signal_queries)
   end

@@ -16,14 +16,14 @@ RSpec.describe Chat::SourceCollection do
         {
           title: "Frog papers",
           url: "http://example.test/frogs",
-          matched_chunks: [ { page: 2 } ]
+          matched_chunks: [ { pages: [ 2 ] } ]
         }
       ],
       passages: [
         {
           document_title: "Frog papers",
           url: "http://example.test/frogs",
-          page: "4"
+          pages: [ 4 ]
         }
       ]
     )
@@ -42,14 +42,14 @@ RSpec.describe Chat::SourceCollection do
         {
           title: "Kurland oral history",
           url: "http://example.test/kurland",
-          matched_chunks: [ { filename: "transcript.pdf", page: "14" }, { filename: "_metadata_" } ]
+          matched_chunks: [ { filename: "transcript.pdf", pages: [ 14 ] }, { filename: "_metadata_" } ]
         }
       ]
     )
     collection.add(
       passages: [
-        { document_title: "Kurland oral history", url: "http://example.test/kurland", filename: "notes.pdf", page: "14" },
-        { document_title: "Kurland oral history", url: "http://example.test/kurland", filename: "notes.pdf", page: "2" }
+        { document_title: "Kurland oral history", url: "http://example.test/kurland", filename: "notes.pdf", pages: [ 14 ] },
+        { document_title: "Kurland oral history", url: "http://example.test/kurland", filename: "notes.pdf", pages: [ 2 ] }
       ]
     )
 
@@ -73,7 +73,7 @@ RSpec.describe Chat::SourceCollection do
 
   it "makes a source of a result once a passage from it is retrieved" do
     collection.add(results: [ { title: "Frog papers", url: "http://example.test/frogs" } ])
-    collection.add(passages: [ { document_title: "Frog papers", url: "http://example.test/frogs", page: "4" } ])
+    collection.add(passages: [ { document_title: "Frog papers", url: "http://example.test/frogs", pages: [ 4 ] } ])
 
     expect(collection.for_answer("Frog papers says so.").sources).to eq(
       [ { title: "Frog papers", url: "http://example.test/frogs", pages: [ "4" ] } ]
@@ -109,7 +109,7 @@ RSpec.describe Chat::SourceCollection do
 
     it "promotes a carried document to retrieved once a tool returns it, without duplicating it" do
       collection.seed(results: [ carried ])
-      collection.add(results: [ carried.merge(matched_chunks: [ { page: 7 } ]) ])
+      collection.add(results: [ carried.merge(matched_chunks: [ { pages: [ 7 ] } ]) ])
 
       selection = collection.for_answer("An answer that cites nothing by name.")
 

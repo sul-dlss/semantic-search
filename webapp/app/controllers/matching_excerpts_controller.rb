@@ -15,7 +15,7 @@ class MatchingExcerptsController < ApplicationController
   # Matches Blacklight's default max_per_page.
   MAX_DOCUMENTS = 100
   DOCUMENT_FIELDS = %w[id doc_type_ssi title_display_tesi title_tesi title_tsim
-                       chunk_text_tesi filename_ss page_ss chunk_index_i public_bsi].freeze
+                       chunk_text_tesi filename_ss page_ss pages_ism chunk_index_i public_bsi].freeze
 
   # Answers with streams for every requested id, even on failure, so no result is left showing
   # a loading skeleton.

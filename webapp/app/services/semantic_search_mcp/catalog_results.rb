@@ -142,7 +142,7 @@ module SemanticSearchMcp
       [ "   Matched chunks:" ] + chunks.map do |chunk|
         source = [
           chunk[:filename],
-          chunk[:page] && "page #{chunk[:page]}",
+          ChunkPages.label(chunk[:pages]),
           chunk[:chunk_index] && "chunk #{chunk[:chunk_index]}"
         ].compact.join(", ")
         label = source.present? ? " (#{source})" : ""

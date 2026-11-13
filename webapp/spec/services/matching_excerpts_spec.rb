@@ -168,7 +168,7 @@ RSpec.describe MatchingExcerpts do
       service(search_type: "keyword", embedding: embedding).call
 
       expect(sent_params.keys).not_to include("excerpt_vector", "excerpt_keyword")
-      expect(sent_params.dig(:json, :fields)).to eq(%w[id chunk_index_i filename_ss page_ss score public_bsi])
+      expect(sent_params.dig(:json, :fields)).to eq(%w[id chunk_index_i filename_ss page_ss pages_ism page_start_offsets_ism score public_bsi])
     end
   end
 
@@ -181,12 +181,55 @@ RSpec.describe MatchingExcerpts do
           highlighted: true,
           match: :keyword,
           filename: "report.pdf",
-          page: "12",
+          page: 12,
           chunk_index: 4,
           score: 91.24,
           public: false
         } ]
       )
+    end
+
+    describe "the page of a chunk that crosses a page break" do
+      let(:chunk) { payload.dig("grouped", "_root_", "groups", 0, "doclist", "docs", 0) }
+      let(:chunk_text) { "the end of page twelve.\n\n12\n\nPage thirteen covers water rights in depth." }
+      let(:text_response) do
+        Blacklight::Solr::Response.new(
+          { "response" => { "docs" => [ { "id" => "bb191qg8085_report_pdf_c4", "chunk_text_tesi" => chunk_text } ] } },
+          {}, blacklight_config: CatalogController.blacklight_config, document_model: SolrDocument
+        )
+      end
+
+      before do
+        chunk.merge!("pages_ism" => [ 12, 13 ], "page_start_offsets_ism" => [ 0, 29 ])
+        payload["highlighting"]["bb191qg8085_report_pdf_c4"]["chunk_text_tesi"] =
+          [ "Page thirteen covers <mark>water</mark> <mark>rights</mark> in depth." ]
+        allow(repository).to receive(:search) do |args|
+          args[:params][:q].to_s.start_with?("{!terms f=id}") ? text_response : response
+        end
+      end
+
+      it "labels the excerpt with the page its highlighted words are on" do
+        expect(service.call.values.flatten.first).to include(page: 13)
+      end
+
+      it "fetches the text of only the chunks that cross a page break" do
+        service.call
+
+        expect(repository).to have_received(:search).with(params: {
+          q: "{!terms f=id}bb191qg8085_report_pdf_c4", fl: "id,chunk_text_tesi", rows: 1, facet: false
+        })
+      end
+
+      it "falls back to the chunk's first page when its text cannot be fetched" do
+        allow(Rails.logger).to receive(:warn)
+        allow(repository).to receive(:search) do |args|
+          raise Blacklight::Exceptions::InvalidRequest if args[:params][:q].to_s.start_with?("{!terms f=id}")
+
+          response
+        end
+
+        expect(service.call.values.flatten.first).to include(page: 12)
+      end
     end
 
     it "asks Solr whether each chunk is public" do
