@@ -2,7 +2,7 @@
 service: semantic_search
 
 # Name of the container image (use your-user/app-name on external registries).
-image: sul-dlss-labs/semantic-search
+image: sul-dlss/semantic-search
 
 # Deploy to these servers.
 servers:
