@@ -8,9 +8,17 @@ module Chat
     # Uses an independent LiteLLM model to assess semantic answer quality.
     class LiteLlmJudge
       DEFAULT_MODEL = "claude-sonnet-5"
+      # A verdict covers several rubric criteria, each with its own reason, so it needs room.
+      MAX_OUTPUT_TOKENS = 4_000
+      # The model occasionally emits malformed JSON (duplicate keys, a dropped colon). Resampling
+      # almost always produces a valid verdict, so retry before failing the attempt.
+      MAX_VERDICT_ATTEMPTS = 3
       Verdict = Data.define(:pass, :score, :reason, :criteria)
 
       class RequestError < StandardError; end
+
+      # The judge responded, but not with a usable verdict.
+      class InvalidVerdictError < RequestError; end
 
       def initialize(
         api_base: ENV["LITELLM_API_BASE"],
@@ -31,6 +39,20 @@ module Chat
       attr_reader :model
 
       def evaluate(question:, reference_answer:, rubric:, answer:, sources:)
+        messages = judge_messages(question:, reference_answer:, rubric:, answer:, sources:)
+        attempts = 0
+        begin
+          attempts += 1
+          request_verdict(messages)
+        rescue InvalidVerdictError
+          retry if attempts < MAX_VERDICT_ATTEMPTS
+          raise
+        end
+      end
+
+      private
+
+      def request_verdict(messages)
         request = Net::HTTP::Post.new(
           @uri,
           "Authorization" => "Bearer #{@api_key}",
@@ -39,28 +61,23 @@ module Chat
         )
         request.body = {
           model:,
-          messages: judge_messages(
-            question:,
-            reference_answer:,
-            rubric:,
-            answer:,
-            sources:
-          ),
-          max_tokens: 1_000,
+          messages:,
+          max_tokens: MAX_OUTPUT_TOKENS,
           stream: false
         }.to_json
 
         response = perform(request)
         raise_request_error(response) unless response.is_a?(Net::HTTPSuccess)
 
-        payload = JSON.parse(response.body)
-        content = payload.dig("choices", 0, "message", "content")
-        parse_verdict(content)
-      rescue JSON::ParserError => e
-        raise RequestError, "Evaluation model returned invalid JSON: #{e.message}"
-      end
+        choice = JSON.parse(response.body).dig("choices", 0)
+        if %w[length max_tokens].include?(choice&.dig("finish_reason").to_s.downcase)
+          raise InvalidVerdictError, "Evaluation model reached its output limit before finishing the verdict"
+        end
 
-      private
+        parse_verdict(choice&.dig("message", "content"))
+      rescue JSON::ParserError => e
+        raise RequestError, "LiteLLM evaluation response was not valid JSON: #{e.message}"
+      end
 
       def perform(request)
         http = Net::HTTP.new(@uri.host, @uri.port)
@@ -102,7 +119,7 @@ module Chat
       end
 
       def parse_verdict(content)
-        raise RequestError, "Evaluation model returned an empty response" if content.blank?
+        raise InvalidVerdictError, "Evaluation model returned an empty response" if content.blank?
 
         json = content.to_s
         json = json[/\{.*\}/m] if json.include?("{")
@@ -112,13 +129,15 @@ module Chat
         reason = result["reason"].to_s
         criteria = Array(result["criteria"])
 
-        raise RequestError, "Evaluation verdict pass must be true or false" unless [ true, false ].include?(pass)
-        raise RequestError, "Evaluation verdict score must be between 0 and 1" unless score.between?(0, 1)
-        raise RequestError, "Evaluation verdict reason must not be blank" if reason.blank?
+        raise InvalidVerdictError, "Evaluation verdict pass must be true or false" unless [ true, false ].include?(pass)
+        raise InvalidVerdictError, "Evaluation verdict score must be between 0 and 1" unless score.between?(0, 1)
+        raise InvalidVerdictError, "Evaluation verdict reason must not be blank" if reason.blank?
 
         Verdict.new(pass:, score:, reason:, criteria:)
+      rescue JSON::ParserError => e
+        raise InvalidVerdictError, "Evaluation model returned invalid JSON: #{e.message}"
       rescue ArgumentError, TypeError => e
-        raise RequestError, "Evaluation model returned an invalid verdict: #{e.message}"
+        raise InvalidVerdictError, "Evaluation model returned an invalid verdict: #{e.message}"
       end
 
       def raise_request_error(response)
