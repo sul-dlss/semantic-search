@@ -34,7 +34,7 @@ RSpec.describe SearchBuilder do
       expect(solr_parameters).not_to have_key(:defType)
     end
 
-    it "uses the threshold query for retrieval and reranking" do
+    it "uses the threshold query for retrieval without a redundant vector rerank" do
       solr_parameters = { q: "first Marlins pitch" }
 
       builder.add_embedding_to_query(solr_parameters)
@@ -44,11 +44,7 @@ RSpec.describe SearchBuilder do
       expect(solr_parameters).not_to have_key(:q)
       expect(solr_parameters).not_to have_key(:defType)
       expect(solr_parameters[:json]).not_to have_key(:params)
-      expect(solr_parameters).to include(
-        rq: "{!rerank reRankQuery=$rqq reRankDocs=100 reRankWeight=100.0}",
-        rqq: "{!parent which=doc_type_ssi:parent score=max v=$rqq_vector}",
-        rqq_vector: "{!vectorSimilarity f=vector minReturn=0.8}[0.1, 0.2]"
-      )
+      expect(solr_parameters).not_to include(:rq, :rqq, :rqq_vector)
     end
 
     it "uses edismax without reranking for keyword searches" do
