@@ -5,4 +5,8 @@
     · Query embedding: <%= number_with_delimiter(lookup[:duration_ms].round) %> ms
     (<%= lookup[:cached] ? "cached" : "not cached" %>)
   <% end %>
+  <% if (solr = Current.solr_request) %>
+    · Solr: <%= number_with_delimiter(solr[:duration_ms].round) %> ms
+    <% if solr[:qtime_ms] %>(QTime <%= number_with_delimiter(solr[:qtime_ms]) %> ms)<% end %>
+  <% end %>
 </p>

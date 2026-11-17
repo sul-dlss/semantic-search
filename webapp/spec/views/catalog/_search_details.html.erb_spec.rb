@@ -21,6 +21,26 @@ RSpec.describe "catalog/_search_details", type: :view do
     expect(rendered.squish).to include("Query embedding: 2 ms (cached)")
   end
 
+  it "shows the Solr round trip and Solr's own query time" do
+    controller.params[:search_type] = "vector"
+    Current.embedding_lookup = { duration_ms: 2.0, cached: true }
+    Current.solr_request = { duration_ms: 8412.6, qtime_ms: 8350 }
+
+    render partial: "catalog/search_details"
+
+    expect(rendered.squish).to include("Query embedding: 2 ms (cached) · Solr: 8,413 ms (QTime 8,350 ms)")
+  end
+
+  it "leaves out QTime when Solr did not report one" do
+    controller.params[:search_type] = "keyword"
+    Current.solr_request = { duration_ms: 40.0, qtime_ms: nil }
+
+    render partial: "catalog/search_details"
+
+    expect(rendered.squish).to include("Solr: 40 ms")
+    expect(rendered).not_to include("QTime")
+  end
+
   it "leaves out the embedding when none was used" do
     controller.params[:search_type] = "keyword"
 
