@@ -114,8 +114,17 @@ module SemanticSearch
     # Maximum approximate JSON payload size, in bytes, for sources sent to the browser.
     config.x.chat.max_source_event_characters = 64_000
 
-    # Maximum output tokens requested for each model completion.
-    config.x.chat.max_output_tokens = 4_000
+    # Maximum output tokens requested for each model completion. On models that bill thinking
+    # against the output budget (e.g. Gemini), reasoning shares this cap with the visible answer:
+    # at 4,000 tokens long answers were cut off after only ~1,500-2,000 tokens of text. This is a
+    # ceiling, not a reservation, so raising it does not change the cost of typical answers.
+    config.x.chat.max_output_tokens = 16_000
+
+    # Reasoning budget requested for each agent-loop completion. "high" matches Gemini 3's default
+    # thinking level; it is set explicitly so changing models does not silently change how much
+    # the model deliberates. Thinking tokens count against max_output_tokens above, so lowering
+    # this also leaves more of that budget for the answer.
+    config.x.chat.reasoning_effort = "high"
 
     # The search result summary is a few paragraphs of prose with no tool calls, so it needs far
     # less room than the agent loop. On models that bill thinking against the output budget this
