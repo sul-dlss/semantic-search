@@ -32,7 +32,7 @@ RSpec.describe Chat::Evaluation::LiteLlmJudge do
       payload = JSON.parse(request.body)
       expect(request.uri.to_s).to eq("https://litellm.example/v1/chat/completions")
       expect(request["Authorization"]).to eq("Bearer secret")
-      expect(payload).to include("model" => "judge-model", "stream" => false)
+      expect(payload).to include("model" => "judge-model", "stream" => false, "max_tokens" => 4_000)
       expect(payload).not_to have_key("temperature")
       expect(payload.dig("messages", 1, "content")).to include(
         "John Lynch threw the first pitch",
@@ -54,14 +54,51 @@ RSpec.describe Chat::Evaluation::LiteLlmJudge do
     expect(verdict.reason).to include("all required facts")
   end
 
-  it "rejects a malformed verdict" do
+  def completion_body(content, finish_reason: "stop")
+    { choices: [ { message: { content: }, finish_reason: } ] }.to_json
+  end
+
+  def evaluate
+    judge.evaluate(question: "Q", reference_answer: "R", rubric: [ "C" ], answer: "A", sources: [])
+  end
+
+  let(:valid_verdict) { { pass: true, score: 1.0, reason: "Complete.", criteria: [] }.to_json }
+
+  it "rejects a malformed verdict after retrying" do
+    allow(response).to receive(:body).and_return(completion_body('{"pass":"yes","score":2,"reason":"No"}'))
+    allow(http).to receive(:request).and_return(response)
+
+    expect { evaluate }.to raise_error(described_class::InvalidVerdictError, "Evaluation verdict pass must be true or false")
+    expect(http).to have_received(:request).exactly(described_class::MAX_VERDICT_ATTEMPTS).times
+  end
+
+  it "retries when the verdict is not valid JSON" do
     allow(response).to receive(:body).and_return(
-      { choices: [ { message: { content: '{"pass":"yes","score":2,"reason":"No"}' } } ] }.to_json
+      completion_body('{"pass":true,"score":1.0,"score":1.0,"reason":"Dup"}'),
+      completion_body(valid_verdict)
     )
     allow(http).to receive(:request).and_return(response)
 
-    expect do
-      judge.evaluate(question: "Q", reference_answer: "R", rubric: [ "C" ], answer: "A", sources: [])
-    end.to raise_error(described_class::RequestError, "Evaluation verdict pass must be true or false")
+    expect(evaluate.reason).to eq("Complete.")
+    expect(http).to have_received(:request).twice
+  end
+
+  it "retries when the verdict was cut off at the output limit" do
+    allow(response).to receive(:body).and_return(
+      completion_body('{"pass":true,"score":1.0,"reason":"Cut', finish_reason: "length"),
+      completion_body(valid_verdict)
+    )
+    allow(http).to receive(:request).and_return(response)
+
+    expect(evaluate.pass).to be(true)
+    expect(http).to have_received(:request).twice
+  end
+
+  it "does not retry a response body that is not a completion" do
+    allow(response).to receive(:body).and_return("<html>proxy error</html>")
+    allow(http).to receive(:request).and_return(response)
+
+    expect { evaluate }.to raise_error(described_class::RequestError, /not valid JSON/)
+    expect(http).to have_received(:request).once
   end
 end
