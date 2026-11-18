@@ -20,9 +20,6 @@ class SearchBuilder < Blacklight::SearchBuilder
   # fed into RRF. Queries of one or two terms still require every term.
   HYBRID_LEXICAL_MM = "2<75%"
 
-  # Number of top-scoring documents from the main query to rescore with the vector query.
-  RERANK_DOCS = 100
-
   self.default_processor_chain += [ :add_embedding_to_query ]
 
   attr_reader :query_embedding
@@ -56,22 +53,13 @@ class SearchBuilder < Blacklight::SearchBuilder
       solr_parameters[:defType] = "edismax"
     end
     solr_parameters[:json] ||= { query: {} }
+    # Exactly one of these is non-empty here: keyword mode has only the lexical clauses and vector
+    # mode only the vector one. Vector mode needs no rerank pass: its ranking already is the
+    # vector score, and reranking with the same vectorSimilarity query would make Solr run that
+    # (expensive, unbounded) query a second time without changing the order.
     solr_parameters[:json][:query][:bool] = {
       should: keyword(solr_parameters) + keyword_chunks + vector_similarity
     }
-    return unless vector_similarity.present?
-
-    add_vector_rerank(solr_parameters)
-  end
-
-  # The rerank parser is only applied via the top-level rq param and its reRankQuery must be
-  # a query string, so this restates the vector clause in local-params syntax. These are
-  # plain Solr params (not json.params) so Blacklight merges them into the single "params"
-  # block of the JSON request.
-  def add_vector_rerank(solr_parameters)
-    solr_parameters[:rq] = "{!rerank reRankQuery=$rqq reRankDocs=#{RERANK_DOCS} reRankWeight=#{VECTOR_BOOST}}"
-    solr_parameters[:rqq] = "{!parent which=doc_type_ssi:parent score=max v=$rqq_vector}"
-    solr_parameters[:rqq_vector] = "{!vectorSimilarity f=vector minReturn=#{VECTOR_MIN_RETURN}}#{embedding_vector}"
   end
 
   def keyword(solr_parameters, mm: nil)
@@ -144,7 +132,6 @@ class SearchBuilder < Blacklight::SearchBuilder
     ]
   end
 
-  # Memoized because the vector rerank restates the vector clause.
   def embedding_vector
     @embedding_vector ||= "[#{retrieve_embedding(search_state.params[:q]).join(', ')}]"
   end
