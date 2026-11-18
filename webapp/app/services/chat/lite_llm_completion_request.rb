@@ -56,7 +56,7 @@ module Chat
         messages: @messages,
         tools: @tools.presence,
         tool_choice: @tool_choice || (@tools.present? ? "auto" : nil),
-        reasoning_effort: @reasoning_effort,
+        reasoning_effort: @reasoning_effort || Rails.configuration.x.chat.reasoning_effort,
         max_tokens: @max_tokens || Rails.configuration.x.chat.max_output_tokens,
         stream: true,
         stream_options: { include_usage: true }

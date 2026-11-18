@@ -39,11 +39,11 @@ RSpec.describe Chat::LiteLlmCompletionRequest do
       expect(body).to include(
         "model" => "chat-alias",
         "messages" => messages,
-        "max_tokens" => 4_000,
+        "max_tokens" => 16_000,
+        "reasoning_effort" => "high",
         "stream" => true,
         "stream_options" => { "include_usage" => true }
       )
-      expect(body).not_to have_key("reasoning_effort")
       block.call(response)
     end
 
