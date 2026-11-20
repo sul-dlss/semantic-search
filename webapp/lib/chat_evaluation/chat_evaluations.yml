@@ -393,3 +393,23 @@ cases:
       - Reports that the user's search returned no matches.
       - Still searches the collections with its own tools rather than stopping at the empty result.
       - Does not state or imply that the corpus contains nothing on the topic based only on the empty search.
+
+  - id: american_studies_policy_committee_members
+    question: Who were the members of the American Studies policy committee that helped develop the American Studies major?
+    reference_answer: >-
+      Campus report (Volume 8, 1975-1976, p. 213) says Professor William Clebsch
+      headed the American Studies policy committee. Its faculty members were
+      Barton J. Bernstein (history), Henry S. Breitrose (communication), William
+      Chace (English), Wendell Cole (drama), Lawrence M. Friedman (law), Albert
+      Gelpi (English), Albert H. Hastorf (psychology), Arturo Islas (English),
+      David Kennedy (history), Hubert R. Marshall and John Manley (political
+      science), Robert E. McGinn (values, technology, and society), Anne McMahon
+      (sociology), Dwight Miller (art), Nathan Rosenberg (economics), and David
+      Tyack (education). Three undergraduates, Michael R. Hammond, Harry M.
+      Lirtzman, and Katheryn A. Paterson, served as regular members.
+    rubric:
+      - Identifies William Clebsch as the head of the policy committee.
+      - Lists the faculty named early in the Campus report list, including Barton J. Bernstein, Henry S. Breitrose, Albert Gelpi, and Robert E. McGinn.
+      - Lists the faculty named late in the list, including Anne McMahon, Dwight Miller, Nathan Rosenberg, and David Tyack.
+      - Names the three undergraduate members, Michael R. Hammond, Harry M. Lirtzman, and Katheryn A. Paterson.
+    require_citations: true

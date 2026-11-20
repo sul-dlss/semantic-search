@@ -27,7 +27,65 @@ RSpec.describe Chat::ToolResultCompactor do
     expect(text).to start_with("Passage evidence:\n1. Stanford report. Volume 36, 2003-2004")
     expect(text).to include("page 571", "Source: /catalog/vm857hw3603")
     expect(text).not_to include("chunk 4")
-    expect(text.length).to be < 1_300
+    expect(text.length).to be < 2_300
+  end
+
+  it "sends a whole indexer-sized chunk without cutting off its end" do
+    ending = "Faculty members include Barton J. Bernstein, history; Henry S. Breitrose, communication."
+    chunk = ("x" * (1_490 - ending.length)) + ending
+
+    text = compactor.call(
+      text: "Passages",
+      structured_content: {
+        passages: [ { rank: 1, text: chunk, filename: "fx254ps0743_04_0213.xml", chunk_index: 2,
+                      document_id: "fx254ps0743", url: "/catalog/fx254ps0743" } ]
+      }
+    )
+
+    expect(text).to include(ending)
+  end
+
+  it "joins neighbouring chunks of a file into one passage without repeating their overlap" do
+    passage = lambda do |rank, index, text|
+      { rank:, text:, filename: "fx254ps0743_04_0213.xml", chunk_index: index, pages: [ 213 ],
+        document_id: "fx254ps0743", document_title: "Campus report. Volume 8, 1975-1976",
+        url: "/catalog/fx254ps0743" }
+    end
+    text = compactor.call(
+      text: "Passages",
+      structured_content: {
+        passages: [
+          passage.call(1, 3, "Robert E. McGinn, values, technology,\nand society; Anne McMahon, sociology. " \
+                             "Three undergraduates serve."),
+          { rank: 2, text: "Unrelated evidence", chunk_id: "other", document_id: "other", url: "/catalog/other" },
+          passage.call(3, 2, "Clebsch heads the American studies policy committee. Faculty members include " \
+                             "Barton J. Bernstein, history; Robert E. McGinn, values, technology,\nand society; " \
+                             "Anne McMahon, sociology.")
+        ]
+      }
+    )
+
+    expect(text).to include(
+      "1, 3. Campus report. Volume 8, 1975-1976 (fx254ps0743_04_0213.xml, page 213)\n" \
+      "Clebsch heads the American studies policy committee. Faculty members include Barton J. Bernstein, " \
+      "history; Robert E. McGinn, values, technology,\nand society; Anne McMahon, sociology. Three undergraduates serve."
+    )
+    expect(text.scan("Anne McMahon").length).to eq(1)
+    expect(text.index("Clebsch heads")).to be < text.index("Unrelated evidence")
+  end
+
+  it "keeps chunks that are not neighbours as separate passages" do
+    text = compactor.call(
+      text: "Passages",
+      structured_content: {
+        passages: [ 1, 3 ].map do |index|
+          { rank: index, text: "Chunk #{index} evidence", filename: "frogs.xml", chunk_index: index,
+            document_id: "frogs", url: "/catalog/frogs" }
+        end
+      }
+    )
+
+    expect(text).to include("1. frogs (frogs.xml)\nChunk 1 evidence", "3. frogs (frogs.xml)\nChunk 3 evidence")
   end
 
   it "sends a chunk once when passage and catalog search both return it" do
@@ -148,5 +206,24 @@ RSpec.describe Chat::ToolResultCompactor do
     )
 
     expect(text).to include("Document frogs: 1 of 20 chunks", "Evidence", "Continue with cursor: next-page")
+  end
+
+  it "joins consecutive document chunks of a file" do
+    text = compactor.call(
+      text: "Document chunks",
+      structured_content: {
+        document_id: "frogs",
+        returned_chunks: 3,
+        total_chunks: 3,
+        complete: true,
+        chunks: [
+          { id: "c0", text: "The frog list begins with Bullfrog, Leopard frog,", filename: "a.xml", chunk_index: 0 },
+          { id: "c1", text: "Bullfrog, Leopard frog, and Tree frog.", filename: "a.xml", chunk_index: 1 },
+          { id: "c2", text: "A new page.", filename: "b.xml", chunk_index: 0 }
+        ]
+      }
+    )
+
+    expect(text).to include("(a.xml)\nThe frog list begins with Bullfrog, Leopard frog, and Tree frog.", "(b.xml)\nA new page.")
   end
 end
