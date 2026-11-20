@@ -7,7 +7,11 @@ module Chat
   class ToolResultCompactor
     MAX_CHARACTERS = 24_000
     MAX_TOTAL_CHARACTERS = 40_000
-    MAX_EXCERPT_CHARACTERS = 1_000
+    # The indexer cuts chunks at about 1,500 characters, so this only guards against outliers. A lower
+    # cap drops the end of nearly every chunk, which is where a list running into the next chunk is.
+    MAX_EXCERPT_CHARACTERS = 2_000
+    # Neighbouring chunks repeat some text; shorter matches are treated as coincidence.
+    MIN_OVERLAP_CHARACTERS = 20
     MAX_ITEMS_PER_TYPE = 20
     MAX_CHUNKS_PER_RESULT = 1
     DUPLICATE_EVIDENCE_TEXT = "No new evidence; these results duplicate evidence already returned."
@@ -57,14 +61,14 @@ module Chat
     end
 
     def passage_text(passages)
-      entries = Array(passages).first(MAX_ITEMS_PER_TYPE).filter_map do |passage|
-        passage = passage.deep_symbolize_keys
-        entry_for(chunk_key(passage)) do
+      passages = Array(passages).first(MAX_ITEMS_PER_TYPE).map(&:deep_symbolize_keys)
+      entries = contiguous_runs(passages).filter_map do |run|
+        entry_for(run.map { |passage| chunk_key(passage) }) do
+          passage = run.first
           source = passage[:document_title] || passage[:document_id] || "Unknown document"
-          location = location_text(passage)
           <<~TEXT.strip
-            #{passage[:rank]}. #{source}#{location}
-            #{excerpt(passage[:text])}
+            #{run.pluck(:rank).compact.sort.join(', ')}. #{source}#{location_text(run_location(run))}
+            #{stitched_text(run)}
             Source: #{passage[:url]}
           TEXT
         end
@@ -109,10 +113,11 @@ module Chat
     def document_text(content)
       return if content[:document_id].blank? || content[:chunks].blank?
 
-      chunks = Array(content[:chunks]).first(MAX_ITEMS_PER_TYPE).filter_map do |chunk|
-        chunk = chunk.deep_symbolize_keys
-        entry_for(chunk_key(chunk, document_id: content[:document_id])) do
-          "#{location_text(chunk)}\n#{excerpt(chunk[:text])}"
+      document_id = content[:document_id]
+      chunks = Array(content[:chunks]).first(MAX_ITEMS_PER_TYPE).map(&:deep_symbolize_keys)
+      chunks = contiguous_runs(chunks, document_id:).filter_map do |run|
+        entry_for(run.map { |chunk| chunk_key(chunk, document_id:) }) do
+          "#{location_text(run_location(run))}\n#{stitched_text(run)}"
         end
       end
       return if chunks.empty?
@@ -124,15 +129,54 @@ module Chat
     end
 
     # Yields only for evidence that is both new and small enough to fit in what is left of this
-    # message, and marks it seen only once it is really being sent.
-    def entry_for(key)
-      return if @seen.include?(key)
+    # message, and marks its chunks seen only once they are really being sent.
+    def entry_for(keys)
+      return if keys.all? { |key| @seen.include?(key) }
 
       entry = yield
       return if entry.blank? || !reserve_room(entry)
 
-      @seen << key
+      @seen.merge(keys)
       entry
+    end
+
+    # Groups unseen chunks that sit next to each other in the same file, in the order their best-ranked
+    # member arrived. A chunk cut by length often ends mid-list, and the rest of the list is in the
+    # next chunk; sent apart, each half reads as if it were complete.
+    #
+    # @return [Array<Array<Hash>>] runs of chunks, each in file order
+    def contiguous_runs(items, document_id: nil)
+      positioned = items.uniq { |item| chunk_key(item, document_id:) }
+        .reject { |item| @seen.include?(chunk_key(item, document_id:)) }
+        .each_with_index.to_a
+      positioned.group_by { |item, position| stitchable?(item) ? item[:filename] : position }
+        .values
+        .flat_map do |group|
+          group.sort_by { |item, _position| item[:chunk_index].to_i }
+            .slice_when { |(earlier, _), (later, _)| later[:chunk_index] != earlier[:chunk_index] + 1 }
+            .to_a
+        end
+        .sort_by { |run| run.map(&:last).min }
+        .map { |run| run.map(&:first) }
+    end
+
+    def stitchable?(item)
+      item[:filename].present? && item[:chunk_index].is_a?(Integer)
+    end
+
+    def run_location(run)
+      { filename: run.first[:filename], pages: run.flat_map { |item| Array(item[:pages]) }.uniq }
+    end
+
+    def stitched_text(run)
+      run.map { |item| excerpt(item[:text]) }.reduce { |earlier, later| join_overlapping(earlier, later) }
+    end
+
+    # Neighbouring chunks overlap, so the start of one repeats the end of the one before it.
+    def join_overlapping(earlier, later)
+      longest = [ earlier.length, later.length ].min
+      overlap = longest.downto(MIN_OVERLAP_CHARACTERS).find { |length| earlier.end_with?(later[0, length]) }
+      overlap ? earlier + later[overlap..] : "#{earlier}\n#{later}"
     end
 
     # Evidence that does not fit is left unseen so a later tool result can carry it, rather than
