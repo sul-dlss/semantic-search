@@ -91,6 +91,50 @@ RSpec.describe Chat::Evaluation::RemoteChatClient do
         expect(post_http).to have_received(:request)
       end
 
+      it "returns the search context the chat page showed, so the judge can check against it" do
+        allow(get_response).to receive(:body).and_return(<<~HTML)
+          <html><head><meta name="csrf-token" content="csrf"></head><body>
+            <section class="chat-context">
+              <p class="chat-context-summary">
+                <strong>band auditions</strong>
+                &middot; 886
+                results
+                &middot; showing 1&ndash;20
+              </p>
+              <ul class="chat-context-filters">
+                <li class="chat-context-filter"><span>Collection:</span> Oral Histories</li>
+              </ul>
+              <ul class="chat-context-list">
+                <li class="chat-context-result"><div class="chat-context-result-row">
+                  <div class="chat-context-result-body">
+                    <a href="/catalog/ab123cd4567">[Oral history of Lani Guinier]</a>
+                    <span class="chat-context-list-meta">Oral Histories</span>
+                  </div>
+                  <button type="button">Remove</button>
+                </div></li>
+              </ul>
+            </section>
+            <input type="hidden" name="context_token" value="signed">
+          </body></html>
+        HTML
+        allow(post_response).to receive(:read_body) { |&block| block.call("event: done\ndata: {}\n\n") }
+        allow(post_http).to receive(:request) { |_request, &block| block.call(post_response) }
+
+        result = described_class.new(base_url: "https://chat.example").ask("What is here?", search_context:)
+
+        expect(result.search_context).to eq(
+          summary: "band auditions · 886 results · showing 1–20",
+          filters: [ "Collection: Oral Histories" ],
+          results: [
+            {
+              title: "[Oral history of Lani Guinier]",
+              url: "https://chat.example/catalog/ab123cd4567",
+              collection: "Oral Histories"
+            }
+          ]
+        )
+      end
+
       it "fails loudly when the page carries no context, rather than evaluating an unscoped answer" do
         allow(get_response).to receive(:body).and_return(
           '<html><head><meta name="csrf-token" content="csrf"></head></html>'

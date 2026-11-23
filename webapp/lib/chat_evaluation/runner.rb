@@ -171,7 +171,8 @@ module Chat
             reference_answer: evaluation_case.fetch(:reference_answer),
             rubric: evaluation_case.fetch(:rubric),
             answer: chat_result.answer,
-            sources: chat_result.sources
+            sources: chat_result.sources,
+            search_context: chat_result.search_context
           )
         end
         citations_passed = !evaluation_case.fetch(:require_citations, false) ||
@@ -191,6 +192,7 @@ module Chat
           answer: chat_result.answer,
           sources: chat_result.sources,
           notices: chat_result.notices,
+          carried_search_context: chat_result.search_context,
           truncated:,
           citations_passed:,
           judge: {

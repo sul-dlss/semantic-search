@@ -80,6 +80,16 @@ RSpec.describe Chat::Evaluation::Runner do
     expect(output.string).to include("attempt 1: PASS", "Chat evaluation PASSED")
   end
 
+  it "hands the judge the search context the chat page carried and records it" do
+    carried = { summary: "oral history · 886 results · showing 1–20", filters: [], results: [] }
+    allow(chat_client).to receive(:ask).and_return(chat_result.with(search_context: carried))
+
+    result = build_runner.run
+
+    expect(judge).to have_received(:evaluate).with(hash_including(search_context: carried))
+    expect(result.report.dig(:cases, 0, :attempts, 0)).to include(carried_search_context: carried)
+  end
+
   it "fails a response that has no verified clickable citation" do
     allow(chat_client).to receive(:ask).and_return(
       Chat::Evaluation::RemoteChatClient::Result.new(answer: chat_result.answer, sources: [])
