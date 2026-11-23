@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+k8s_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -f "$k8s_dir/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$k8s_dir/.env"
+  set +a
+fi
+
+# Environments are the values/*.yaml files.
+environments() {
+  local f
+  for f in "$k8s_dir"/values/*.yaml; do
+    basename "$f" .yaml
+  done
+}
+
+# Selects the environment a script acts on. Each environment has a values file,
+# a semantic-search-<environment> namespace that its ArgoCD Application deploys
+# to, and a kubectl context from KUBE_CONTEXT_<ENVIRONMENT> in .env.
+use_environment() {
+  environment="$1"
+  if [[ ! -f "$k8s_dir/values/$environment.yaml" ]]; then
+    printf 'Unknown environment %s; expected one of: %s\n' "$environment" "$(environments | paste -sd ' ' -)" >&2
+    exit 1
+  fi
+  values_file="$k8s_dir/values/$environment.yaml"
+  namespace="semantic-search-$environment"
+  local context_var
+  context_var="KUBE_CONTEXT_$(printf '%s' "$environment" | tr '[:lower:]-' '[:upper:]_')"
+  KUBE_CONTEXT="${!context_var:-}"
+}
+
+release=semantic-search
+secret_name=semantic-search
+oidc_secret_name=semantic-search-oidc
+
+# kubectl against the configured context and namespace.
+kube() {
+  kubectl ${KUBE_CONTEXT:+--context "$KUBE_CONTEXT"} --namespace "$namespace" "$@"
+}

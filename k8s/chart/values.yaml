@@ -1,0 +1,86 @@
+image:
+  repository: ghcr.io/sul-dlss/semantic-search
+  # Required: the 7-character commit SHA. The Docker workflow publishes an image
+  # with that tag for each commit on main.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Names of docker-registry Secrets, needed only if the image registry is private.
+imagePullSecrets: []
+
+# Secret with SECRET_KEY_BASE and LITELLM_API_KEY. The chart does not create
+# it; bin/create-secrets does.
+secretName: semantic-search
+
+# Non-secret settings, passed to the app as a ConfigMap. Never put credentials
+# here. The chart sets THRUSTER_HTTP_PORT and HOME itself, because the probes,
+# Service and read-only filesystem depend on them.
+env: {}
+  # SOLR_URL: https://solr.example.edu/solr/collection
+  # LITELLM_API_BASE: https://aigateway.example.edu/v1/
+  # MCP_ALLOWED_HOSTS: app.example.edu
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+# Routing through the cluster's shared Envoy Gateway: a ListenerSet for the
+# hostnames and an HTTPRoute to the Service. Ops must also point each hostname
+# at the cluster in NetDB and on the F5.
+route:
+  enabled: false
+  hostnames: []
+  # selfsigned is enough while the F5 terminates TLS.
+  clusterIssuer: selfsigned
+  gateway:
+    name: default
+    namespace: envoy-gateway-system
+  # Envoy's default is 15s. Chat answers stream over one response for as long
+  # as the model and its tool calls take.
+  requestTimeout: 300s
+
+# Login through the Envoy Gateway's OIDC filter, on /webauth/login only. While
+# this is disabled, /webauth/login answers 503 and nobody can log in.
+# Requires route.enabled.
+oidc:
+  enabled: false
+  # The provider's issuer URL; Envoy reads its discovery document.
+  issuer: ""
+  clientID: ""
+  # Secret with the client secret under the key client-secret. The chart does
+  # not create it; bin/create-secrets does.
+  clientSecretName: semantic-search-oidc
+  scopes:
+    - openid
+
+# Puma runs RAILS_MAX_THREADS (default 3) threads in one process.
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+# Each pod keeps its own SQLite databases (searches, bookmarks, Solid Cache)
+# here. bin/docker-entrypoint creates them at startup, and they're lost when
+# the pod is replaced.
+storage:
+  sizeLimit: 1Gi
+
+# Time a stopping pod keeps for in-flight requests after SIGTERM. A chat
+# answer still streaming after this is cut off.
+terminationGracePeriodSeconds: 60
+# Delay before SIGTERM so endpoints stop routing to the pod first.
+preStopSleepSeconds: 5
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

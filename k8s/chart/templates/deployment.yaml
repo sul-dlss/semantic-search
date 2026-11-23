@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "semantic-search.fullname" . }}
+  labels:
+    {{- include "semantic-search.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "semantic-search.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "semantic-search.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll the pods when the settings change.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- include "semantic-search.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: web
+          image: {{ include "semantic-search.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The image's default command runs Thruster in front of Puma, and its
+          # entrypoint runs db:prepare first.
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: {{ include "semantic-search.fullname" . }}
+          env:
+            # Thruster listens on port 80 by default, which a non-root user
+            # can't always bind. Puma stays on 3000 behind it.
+            - name: THRUSTER_HTTP_PORT
+              value: "8080"
+            # The image's home directory is on the read-only root filesystem.
+            - name: HOME
+              value: /tmp
+            {{- range list "SECRET_KEY_BASE" "LITELLM_API_KEY" }}
+            - name: {{ . }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secretName }}
+                  key: {{ . }}
+            {{- end }}
+          # /up answers once Rails has booted. It doesn't contact Solr or
+          # LiteLLM, so their outages show the app's error page rather than
+          # taking every pod out of the Service.
+          startupProbe:
+            httpGet:
+              path: /up
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /up
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /up
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- if .Values.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "{{ .Values.preStopSleepSeconds }}"]
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- include "semantic-search.containerSecurityContext" . | nindent 12 }}
+          # The writable paths Rails needs on an otherwise read-only filesystem.
+          volumeMounts:
+            - name: storage
+              mountPath: /rails/storage
+            - name: tmp
+              mountPath: /tmp
+            - name: pids
+              mountPath: /rails/tmp/pids
+            - name: sockets
+              mountPath: /rails/tmp/sockets
+      volumes:
+        - name: storage
+          emptyDir:
+            sizeLimit: {{ .Values.storage.sizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 500Mi
+        - name: pids
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: sockets
+          emptyDir:
+            sizeLimit: 1Mi
+      {{- if and (gt (int .Values.replicaCount) 1) (not .Values.affinity) }}
+      # Spread replicas across nodes when possible.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "semantic-search.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

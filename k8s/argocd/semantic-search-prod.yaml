@@ -1,0 +1,31 @@
+# ArgoCD Application for discovery-engine.stanford.edu. Apply it once (or have
+# Ops apply it); after that, ArgoCD syncs whatever is on main. Deploy by
+# committing a new image.tag to k8s/values/prod.yaml with `k8s/bin/deploy prod <sha>`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: semantic-search-prod
+  # The namespace ArgoCD itself runs in; confirm with Ops.
+  namespace: argocd
+spec:
+  # The ArgoCD project Ops creates for this environment.
+  project: semantic-search-prod
+  source:
+    # SSH, so ArgoCD uses the deploy key Ops added to this repo.
+    repoURL: git@github.com:sul-dlss/semantic-search.git
+    targetRevision: main
+    path: k8s/chart
+    helm:
+      releaseName: semantic-search
+      valueFiles:
+        - ../values/prod.yaml
+  destination:
+    # The stanford-prod cluster. kubernetes.default.svc is right only if this
+    # ArgoCD instance runs in stanford-prod; otherwise use the cluster URL Ops gives.
+    server: https://kubernetes.default.svc
+    # Must be a destination the semantic-search-prod project allows.
+    namespace: semantic-search-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -1,0 +1,31 @@
+# discovery-engine.stanford.edu, in the stanford-prod cluster.
+
+image:
+  # The commit SHA to run. Change it with `k8s/bin/deploy prod <sha>`, then commit
+  # and push to main; ArgoCD rolls it out.
+  tag: "3796c02"
+
+env:
+  # TODO: this is the demo's Solr collection on the test Solr cluster.
+  SOLR_URL: https://sul-solr-test.stanford.edu/solr/semantic-search-demo
+  # Allow streamed chat responses to outlast Thruster's 30-second write deadline.
+  THRUSTER_HTTP_WRITE_TIMEOUT: "360"
+  LITELLM_API_BASE: https://dlss-aigateway-prod.stanford.edu/v1/
+  LITELLM_EMBEDDING_MODEL: gemini-embedding-2
+  LITELLM_CHAT_MODEL: gemini-3.8-flash
+  MCP_ALLOWED_HOSTS: discovery-engine.stanford.edu
+
+replicaCount: 2
+
+route:
+  enabled: true
+  hostnames:
+    - discovery-engine.stanford.edu
+
+oidc:
+  # TODO: register an OIDC client with the redirect URL
+  # https://discovery-engine.stanford.edu/webauth/oidc/callback, fill in the
+  # issuer and client ID, run `k8s/bin/create-secrets prod`, then enable.
+  enabled: false
+  issuer: ""
+  clientID: ""

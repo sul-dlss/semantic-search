@@ -1,0 +1,8 @@
+apiVersion: v2
+name: semantic-search
+description: The SUL semantic search (Discovery Engine) Rails application
+type: application
+version: 0.1.0
+# The image tag is a source commit SHA, set in values/<environment>.yaml.
+appVersion: "unversioned"
+home: https://github.com/sul-dlss/semantic-search

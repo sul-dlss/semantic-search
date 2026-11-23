@@ -3,51 +3,61 @@
 require "rails_helper"
 
 RSpec.describe "Authentication", type: :request do
+  def header_links
+    get "/documentation"
+    Nokogiri::HTML(response.body).css("header a").map { |link| link["href"] }
+  end
+
   describe "GET /webauth/login" do
     it "redirects to the root" do
-      get "/webauth/login", headers: authentication_headers_for("user@stanford.edu")
+      get "/webauth/login", headers: gateway_login_headers
 
       expect(response).to redirect_to(root_path)
     end
 
     it "returns to a page on this site named by return_to" do
-      get "/webauth/login", params: { return_to: "/chat?q=frogs" },
-                            headers: authentication_headers_for("user@stanford.edu")
+      get "/webauth/login", params: { return_to: "/chat?q=frogs" }, headers: gateway_login_headers
 
       expect(response).to redirect_to("/chat?q=frogs")
     end
 
     it "ignores a return_to that points off-site" do
-      get "/webauth/login", params: { return_to: "https://evil.example.com/" },
-                            headers: authentication_headers_for("user@stanford.edu")
+      get "/webauth/login", params: { return_to: "https://evil.example.com/" }, headers: gateway_login_headers
 
       expect(response).to redirect_to(root_path)
+    end
+
+    it "logs the user in for later requests" do
+      get "/webauth/login", headers: gateway_login_headers
+
+      expect(header_links).to include("/webauth/logout")
+    end
+
+    it "refuses the login when the gateway didn't add its header" do
+      get "/webauth/login"
+
+      expect(response).to have_http_status(:service_unavailable)
+      expect(header_links).not_to include("/webauth/logout")
+    end
+  end
+
+  describe "the gateway header on other paths" do
+    it "doesn't log the user in" do
+      get "/documentation", headers: gateway_login_headers
+
+      page = Nokogiri::HTML(response.body)
+      expect(page.css("header a").map { |link| link["href"] }).not_to include("/webauth/logout")
     end
   end
 
   describe "GET /webauth/logout" do
-    it "redirects to the shibboleth logout" do
-      get "/webauth/logout", headers: authentication_headers_for("user@stanford.edu")
+    it "logs the user out and redirects to the gateway's OIDC logout" do
+      sign_in
 
-      expect(response).to redirect_to(Authentication::SHIBBOLETH_LOGOUT_PATH)
-    end
-  end
+      get "/webauth/logout"
 
-  describe "#authenticated?" do
-    let(:controller) { ApplicationController.new }
-
-    before do
-      controller.request = ActionDispatch::TestRequest.create
-    end
-
-    it "is false without the remote user header" do
-      expect(controller.send(:authenticated?)).to be false
-    end
-
-    it "is true with the remote user header" do
-      controller.request.headers[Authentication::REMOTE_USER_HEADER] = "user@stanford.edu"
-
-      expect(controller.send(:authenticated?)).to be true
+      expect(response).to redirect_to(Authentication::OIDC_LOGOUT_PATH)
+      expect(header_links).not_to include("/webauth/logout")
     end
   end
 
@@ -68,15 +78,6 @@ RSpec.describe "Authentication", type: :request do
       page = Nokogiri::HTML(response.body)
       expect(page.css('header a[href="/webauth/logout"]').map(&:text)).to eq %w[Logout Logout]
       expect(page.css('header a[href="/webauth/login"]')).to be_empty
-    end
-  end
-
-  describe "sign_in" do
-    it "makes later requests authenticated" do
-      sign_in
-
-      get "/webauth/login"
-      expect(request.headers[Authentication::REMOTE_USER_HEADER]).to eq "user@stanford.edu"
     end
   end
 end

@@ -1,19 +1,22 @@
 # frozen_string_literal: true
 
-# Concern for handling authentication via Shibboleth (copied from the approach used in argo-b3).
+# Concern for handling authentication through the Envoy Gateway's OIDC filter.
 #
-# Apache is configured so that:
-# - /webauth/login requires a shibboleth authenticated user. Thus, redirecting a user to it triggers login.
-# - /Shibboleth.sso/Logout logs the user out of shibboleth.
+# The gateway (see k8s/chart/templates/route.yaml) is configured so that:
+# - /webauth/login requires an OIDC login. Thus, redirecting a user to it triggers login.
+# - Requests that reach /webauth/login carry the AUTHENTICATED_HEADER, which the gateway sets on
+#   that route only, overwriting any value the client sent.
+# - OIDC_LOGOUT_PATH clears the gateway's OIDC session.
 # - Other pages do not require authentication.
-# - It provides the X-Remote-User request header when the user is authenticated.
+#
+# Rails trusts the header only in AuthenticationController#login, and records the login in the
+# session, so no other path can be spoofed with it.
 module Authentication
   extend ActiveSupport::Concern
 
   MAX_URL_SIZE = ActionDispatch::Cookies::MAX_COOKIE_SIZE / 2
-  SHIBBOLETH_LOGOUT_PATH = "/Shibboleth.sso/Logout"
-
-  REMOTE_USER_HEADER = "X-Remote-User"
+  AUTHENTICATED_HEADER = "X-Oidc-Authenticated"
+  OIDC_LOGOUT_PATH = "/webauth/oidc/logout"
 
   included do
     helper_method :authenticated?
@@ -21,16 +24,12 @@ module Authentication
 
   private
 
-  # @return [Boolean] true if Shibboleth has authenticated the user making this request.
+  # @return [Boolean] true if the user making this request has logged in.
   def authenticated?
-    remote_user.present?
-  end
+    # In development there is no gateway in front of Rails, so set REMOTE_USER to simulate a login.
+    return ENV["REMOTE_USER"].present? if Rails.env.development?
 
-  # In development there is no Apache in front of Rails, so set REMOTE_USER to simulate a login.
-  def remote_user
-    return ENV.fetch("REMOTE_USER", nil) if Rails.env.development?
-
-    request.headers[REMOTE_USER_HEADER]
+    session[:authenticated] == true
   end
 
   # Use as a before_action in controllers whose actions require a logged in user.

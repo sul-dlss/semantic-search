@@ -1,0 +1,73 @@
+{{- if .Values.route.enabled }}
+{{- if not .Values.route.hostnames }}
+{{- fail "route.hostnames is required when route.enabled is true" }}
+{{- end }}
+# Registers the hostnames with the shared Envoy Gateway. Ops must also point
+# each hostname at the cluster in NetDB and on the F5.
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+  name: {{ include "semantic-search.fullname" . }}
+  labels:
+    {{- include "semantic-search.labels" . | nindent 4 }}
+  annotations:
+    # The F5 terminates TLS and presents the UIT certificate, so clients
+    # never see this one.
+    cert-manager.io/cluster-issuer: {{ .Values.route.clusterIssuer }}
+spec:
+  parentRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ .Values.route.gateway.name }}
+    namespace: {{ .Values.route.gateway.namespace }}
+  listeners:
+    {{- range .Values.route.hostnames }}
+    - name: {{ . | replace "." "-" }}
+      hostname: {{ . }}
+      port: 443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Same
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: {{ . }}-tls
+    {{- end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "semantic-search.fullname" . }}
+  labels:
+    {{- include "semantic-search.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: ListenerSet
+      name: {{ include "semantic-search.fullname" . }}
+  hostnames:
+    {{- toYaml .Values.route.hostnames | nindent 4 }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        # Only the OIDC login route may send this header to the app; drop any
+        # copy a client sends on every other path.
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ include "semantic-search.authenticatedHeader" . }}
+      backendRefs:
+        - kind: Service
+          name: {{ include "semantic-search.fullname" . }}
+          port: {{ .Values.service.port }}
+      {{- with .Values.route.requestTimeout }}
+      timeouts:
+        request: {{ . }}
+      {{- end }}
+{{- end }}

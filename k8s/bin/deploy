@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Pins an image in values/<environment>.yaml. ArgoCD deploys it once the
+# change is pushed to main.
+set -euo pipefail
+source "$(dirname "$0")/_common"
+if [[ $# -ne 2 || ! "$2" =~ ^[0-9a-f]{7}$ ]]; then
+  printf 'Usage: k8s/bin/deploy <environment> <7-character commit SHA>\nEnvironments: %s\n' "$(environments | paste -sd ' ' -)" >&2
+  exit 1
+fi
+use_environment "$1"
+tag="$2"
+# Refuse tags CI never published, which would leave pods in ImagePullBackOff.
+token="$(curl -fsS 'https://ghcr.io/token?scope=repository:sul-dlss/semantic-search:pull' |
+  sed -E 's/.*"token":"([^"]+)".*/\1/')"
+if ! curl -fsS -o /dev/null -H "Authorization: Bearer $token" \
+  -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+  "https://ghcr.io/v2/sul-dlss/semantic-search/manifests/$tag"; then
+  echo "ghcr.io/sul-dlss/semantic-search:$tag doesn't exist; has the Docker workflow finished for that commit?" >&2
+  exit 1
+fi
+if ! grep -qE '^  tag: "[0-9a-f]{7}"$' "$values_file"; then
+  echo "No image.tag line to update in $values_file" >&2
+  exit 1
+fi
+sed -i.bak -E "s/^  tag: \"[0-9a-f]{7}\"$/  tag: \"$tag\"/" "$values_file"
+rm -f "$values_file.bak"
+git -C "$k8s_dir" --no-pager diff -- "$values_file"
+printf '\nCommit and push to main; ArgoCD syncs it:\n  git commit -am "Deploy %s to %s" && git push\n' "$tag" "$environment"

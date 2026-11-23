@@ -57,31 +57,6 @@ curl -X POST http://localhost:3000/mcp \
 
 ## Deployment
 
-The github workflow will build the docker image on each commit.
-
-See https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry
-
-We deploy with kamal.
-
-  * Get a GitHub token.
-  * cd 'webapp'
-  * Authenticate with kerberos: `kinit`
-  * Login to vault (use SSO): `vault login -method oidc`
-  * Deploy: `KAMAL_REGISTRY_USERNAME=jcoyne \
-    KAMAL_REGISTRY_PASSWORD=<github token> \
-    bin/kamal-otk deploy-main`
-
-`bin/kamal-otk` installs a one-time SSH key on the server using your Kerberos ticket, runs
-`bin/kamal` with whatever arguments you give it, then removes the key. Use it for any Kamal command,
-e.g. `bin/kamal-otk console` or `bin/kamal-otk logs`. It runs Kamal through `bin/with-deploy-env`,
-which loads any deploy secrets missing from your environment from Vault (logging you in with
-`vault login -method oidc` if needed).
-
-### Adding a secret
-
-1. Add it to Vault (as the `content` field), e.g.
-   `vault kv put puppet/application/semantic-search/demo/<name> content=...`.
-2. Add the environment variable to `env.secret` in `webapp/config/deploy.yml`.
-3. Add `NAME=${NAME}` to `webapp/.kamal/secrets`.
-4. Add its Vault path to `VAULT_SECRET_PATHS` in `webapp/bin/with-deploy-env`.
-5. Add it to `secrets` in `Jenkinsfile`, using the same path without the `puppet/` prefix.
+The Docker GitHub Actions workflow builds and publishes an image for each commit on `main`.
+ArgoCD deploys it to Kubernetes at https://discovery-engine.stanford.edu once its SHA is pinned
+in `k8s/values/prod.yaml`. See [k8s/README.md](k8s/README.md).

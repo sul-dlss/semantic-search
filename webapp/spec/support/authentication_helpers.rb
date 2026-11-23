@@ -2,15 +2,16 @@
 
 # Helpers to assist with authentication.
 module AuthenticationHelpers
-  def authentication_headers_for(remote_user)
-    { Authentication::REMOTE_USER_HEADER => remote_user }
+  # The header the gateway adds to requests for /webauth/login once the user has logged in with OIDC.
+  def gateway_login_headers
+    { Authentication::AUTHENTICATED_HEADER => "true" }
   end
 
-  def sign_in(remote_user = "user@stanford.edu", example: RSpec.current_example)
+  def sign_in(example: RSpec.current_example)
     if example.metadata[:type] == :system
-      visit test_login_path(remote_user:)
+      visit test_login_path
     else
-      get test_login_path(remote_user:)
+      get test_login_path
     end
   end
 
