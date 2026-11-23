@@ -1,0 +1,11 @@
+{{- include "semantic-search.checkValues" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "semantic-search.fullname" . }}
+  labels:
+    {{- include "semantic-search.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.env }}
+  {{ $key }}: {{ $value | toString | quote }}
+  {{- end }}
