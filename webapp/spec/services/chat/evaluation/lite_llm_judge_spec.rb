@@ -54,6 +54,42 @@ RSpec.describe Chat::Evaluation::LiteLlmJudge do
     expect(verdict.reason).to include("all required facts")
   end
 
+  it "gives the judge the carried search context as verified data" do
+    allow(response).to receive(:body).and_return(
+      { choices: [ { message: { content: { pass: true, score: 1.0, reason: "Grounded.", criteria: [] }.to_json } } ] }.to_json
+    )
+    allow(http).to receive(:request) do |request|
+      messages = JSON.parse(request.body)["messages"]
+      expect(messages.dig(0, "content")).to include("verified search context")
+      expect(JSON.parse(messages.dig(1, "content"))).to include(
+        "verified_search_context_carried_by_application" => { "summary" => "oral history · 886 results · showing 1–20" }
+      )
+      response
+    end
+
+    judge.evaluate(
+      question: "Summarize these results.", reference_answer: "R", rubric: [ "C" ], answer: "A", sources: [],
+      search_context: { summary: "oral history · 886 results · showing 1–20" }
+    )
+
+    expect(http).to have_received(:request)
+  end
+
+  it "leaves the search context out when there is none" do
+    allow(response).to receive(:body).and_return(
+      { choices: [ { message: { content: { pass: true, score: 1.0, reason: "Fine.", criteria: [] }.to_json } } ] }.to_json
+    )
+    allow(http).to receive(:request) do |request|
+      content = JSON.parse(request.body).dig("messages", 1, "content")
+      expect(JSON.parse(content)).not_to have_key("verified_search_context_carried_by_application")
+      response
+    end
+
+    evaluate
+
+    expect(http).to have_received(:request)
+  end
+
   def completion_body(content, finish_reason: "stop")
     { choices: [ { message: { content: }, finish_reason: } ] }.to_json
   end

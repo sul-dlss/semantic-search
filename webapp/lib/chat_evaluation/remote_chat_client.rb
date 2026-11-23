@@ -3,6 +3,7 @@
 require "cgi"
 require "json"
 require "net/http"
+require "nokogiri"
 
 module Chat
   module Evaluation
@@ -11,8 +12,10 @@ module Chat
       # The server sends this notice, then a done event, when the model hits its output token limit.
       LENGTH_LIMIT_NOTICE = "reached its length limit"
 
-      Result = Data.define(:answer, :sources, :notices) do
-        def initialize(answer:, sources:, notices: [])
+      # search_context is what the chat page showed of the search the conversation started from:
+      # the same totals and results the deployment puts in the model's prompt.
+      Result = Data.define(:answer, :sources, :notices, :search_context) do
+        def initialize(answer:, sources:, notices: [], search_context: nil)
           super
         end
 
@@ -33,7 +36,7 @@ module Chat
       # search_context is a hash of Blacklight search params, resolved into a signed token by the
       # deployment itself, which is the only side holding secret_key_base.
       def ask(question, history: [], search_context: nil)
-        csrf_token, cookies, context_token = fetch_session(search_context)
+        csrf_token, cookies, context_token, carried_context = fetch_session(search_context)
         accumulator = StreamAccumulator.new
         uri = endpoint_uri
         request = Net::HTTP::Post.new(
@@ -54,7 +57,7 @@ module Chat
 
           response.read_body { |chunk| accumulator.feed(chunk) }
         end
-        accumulator.finish
+        accumulator.finish.with(search_context: carried_context)
       end
 
       private
@@ -70,7 +73,31 @@ module Chat
         raise RequestError, "The chat page did not contain a CSRF token" if token.blank?
 
         cookies = Array(response.get_fields("set-cookie")).filter_map { |cookie| cookie.split(";", 2).first }.join("; ")
-        [ CGI.unescapeHTML(token), cookies, context_token_from(body, search_context) ]
+        context_token = context_token_from(body, search_context)
+        carried_context = carried_context_from(body, uri) if context_token
+        [ CGI.unescapeHTML(token), cookies, context_token, carried_context ]
+      end
+
+      # Read from the "From your search" panel, which renders the same signed payload the
+      # deployment describes to the model, so the judge can check counts and titles against it.
+      def carried_context_from(body, page_uri)
+        panel = Nokogiri::HTML(body).at_css(".chat-context")
+        return nil if panel.nil?
+
+        {
+          summary: panel.at_css(".chat-context-summary")&.text.to_s.squish,
+          filters: panel.css(".chat-context-filter").map { |filter| filter.text.squish },
+          results: panel.css(".chat-context-result").filter_map do |result|
+            link = result.at_css(".chat-context-result-body a[href]")
+            next if link.nil?
+
+            {
+              title: link.text.squish,
+              url: URI.join(page_uri.to_s, link["href"]).to_s,
+              collection: result.at_css(".chat-context-list-meta")&.text.to_s.squish.presence
+            }.compact
+          end
+        }
       end
 
       # Fails loudly: an unscoped conversation would look like a model regression.
