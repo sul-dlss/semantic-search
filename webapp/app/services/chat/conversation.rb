@@ -94,13 +94,16 @@ module Chat
         break if @tool_call_executor.limit_reached?
       end
 
+      # These are user turns, not system messages: LiteLLM hoists every system message into Gemini's
+      # system instruction, so the conversation would still end on a tool result and Gemini keeps
+      # calling tools (even with tool_choice "none"), leaving no answer text.
       messages << {
-        "role" => "system",
+        "role" => "user",
         "content" => "Stop searching and answer now using only the evidence already returned. If it is insufficient, say so."
       }
       2.times do |attempt|
         messages << {
-          "role" => "system",
+          "role" => "user",
           "content" => "Return a final answer as plain response text now. Do not call a tool."
         } if attempt.positive?
         completion, streamed_content = stream_completion(

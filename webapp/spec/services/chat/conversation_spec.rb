@@ -19,7 +19,7 @@ RSpec.describe Chat::Conversation do
     end
 
     def call(messages:, tools:, tool_choice: nil)
-      @requests << { messages:, tools:, tool_choice: }
+      @requests << { messages: messages.dup, tools:, tool_choice: }
       self
     end
 
@@ -493,6 +493,11 @@ RSpec.describe Chat::Conversation do
     ).each_event.to_a.join
 
     expect(client.requests.last(2)).to all(include(tools: tool_runner.definitions, tool_choice: "none"))
+    # Gemini only honors a closing instruction that arrives as the final user turn.
+    expect(client.requests.last(2).map { |request| request[:messages].last }).to eq [
+      { "role" => "user", "content" => "Stop searching and answer now using only the evidence already returned. If it is insufficient, say so." },
+      { "role" => "user", "content" => "Return a final answer as plain response text now. Do not call a tool." }
+    ]
     expect(stream).to include("The evidence identifies a frog.", "event: done")
   end
 
