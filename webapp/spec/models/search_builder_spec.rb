@@ -10,15 +10,50 @@ RSpec.describe SearchBuilder do
   end
 
   describe "#vector_similarity" do
-    it "selects child chunks using a minimum similarity threshold" do
-      vector_query = builder.vector_similarity.dig(0, :boost, :query, :parent, :query, :vectorSimilarity)
+    it "applies the similarity threshold to the knn candidate chunks only" do
+      vector_query = builder.vector_similarity.dig(0, :boost, :query, :parent, :query)
 
       expect(vector_query).to eq(
-        f: "vector",
-        minReturn: described_class::VECTOR_MIN_RETURN,
-        query: "[0.1, 0.2]"
+        "{!vectorSimilarity f=vector minReturn=#{described_class::VECTOR_MIN_RETURN} " \
+        "preFilter=$vector_candidates}[0.1, 0.2]"
       )
-      expect(vector_query).not_to have_key(:topK)
+    end
+  end
+
+  describe "#add_vector_candidates" do
+    it "takes the best chunk of each of the nearest parents" do
+      solr_parameters = {}
+
+      builder.add_vector_candidates(solr_parameters)
+
+      expect(solr_parameters).to eq(
+        vector_parents: "doc_type_ssi:parent",
+        vector_candidates: "{!knn f=vector topK=#{described_class::VECTOR_CANDIDATE_PARENTS} " \
+                           "childrenOf=$vector_parents}[0.1, 0.2]"
+      )
+    end
+
+    it "applies a facet filter to the parents before choosing candidates" do
+      solr_parameters = { fq: [ "{!term f=collection_title_ss}Stanford Daily" ] }
+
+      builder.add_vector_candidates(solr_parameters)
+
+      expect(solr_parameters[:vector_parent_filter_0]).to eq("{!term f=collection_title_ss}Stanford Daily")
+      expect(solr_parameters[:vector_candidates]).to include("parents.preFilter=$vector_parent_filter_0}")
+      expect(solr_parameters).not_to have_key(:vector_parent_filter)
+    end
+
+    it "requires every filter when there are several" do
+      solr_parameters = { fq: [ "{!term f=format_hsim}Text", "child_count_i:[2 TO *]" ] }
+
+      builder.add_vector_candidates(solr_parameters)
+
+      expect(solr_parameters).to include(
+        vector_parent_filter_0: "{!term f=format_hsim}Text",
+        vector_parent_filter_1: "child_count_i:[2 TO *]",
+        vector_parent_filter: "{!bool filter=$vector_parent_filter_0 filter=$vector_parent_filter_1}"
+      )
+      expect(solr_parameters[:vector_candidates]).to include("parents.preFilter=$vector_parent_filter}")
     end
   end
 
@@ -41,6 +76,7 @@ RSpec.describe SearchBuilder do
 
       vector_clause = builder.vector_similarity
       expect(solr_parameters.dig(:json, :query, :bool, :should)).to eq(vector_clause)
+      expect(solr_parameters[:vector_candidates]).to start_with("{!knn ")
       expect(solr_parameters).not_to have_key(:q)
       expect(solr_parameters).not_to have_key(:defType)
       expect(solr_parameters[:json]).not_to have_key(:params)
@@ -56,6 +92,7 @@ RSpec.describe SearchBuilder do
 
       expect(solr_parameters[:defType]).to eq("edismax")
       expect(solr_parameters[:q]).to eq("first Marlins pitch")
+      expect(solr_parameters).not_to have_key(:vector_candidates)
       expect(solr_parameters).not_to include(:rq, :rqq, :rqq_vector)
     end
 
@@ -72,6 +109,7 @@ RSpec.describe SearchBuilder do
       expect(solr_parameters.dig(:json, :queries, :lexical, :bool, :should, 1, :boost, :query, :parent, :query, :edismax))
         .to include(mm: "2<75%")
       expect(solr_parameters.dig(:json, :queries, :vector)).to eq(builder.vector_similarity.first)
+      expect(solr_parameters[:vector_candidates]).to start_with("{!knn ")
       expect(solr_parameters).to include(combiner: true, "combiner.query": %w[lexical vector],
                                          "combiner.algorithm": "rrf")
       expect(solr_parameters.dig(:json, :query)).to be_nil
