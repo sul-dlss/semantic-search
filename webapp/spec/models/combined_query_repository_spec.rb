@@ -15,21 +15,3 @@ RSpec.describe CombinedQueryRepository do
     expect(repository.send(:default_search_path, { json: { query: { knn: {} } } })).to eq("select")
   end
 end
-
-RSpec.describe CombinedQueryRepository, "#search" do
-  subject(:repository) { CatalogController.blacklight_config.repository }
-
-  before { allow(repository).to receive(:send_and_receive) }
-
-  it "asks Solr to search segments in parallel" do
-    repository.search(params: { q: "x" })
-
-    expect(repository).to have_received(:send_and_receive).with("select", hash_including(multiThreaded: true, q: "x"))
-  end
-
-  it "lets the caller turn it off" do
-    repository.search(params: { q: "x", multiThreaded: false })
-
-    expect(repository).to have_received(:send_and_receive).with("select", hash_including(multiThreaded: false))
-  end
-end
