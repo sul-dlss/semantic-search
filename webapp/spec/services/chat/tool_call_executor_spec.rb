@@ -92,6 +92,24 @@ RSpec.describe Chat::ToolCallExecutor do
     )
   end
 
+  it "uses the research query for a question about a carried search" do
+    executor = described_class.new(
+      tool_runner:, source_collection:,
+      question: "Is there anything about this topic outside the collection I filtered to?",
+      result_compactor:, search_context: true
+    )
+    allow(tool_runner).to receive(:call).and_return(text: "No results", structured_content: {})
+
+    executor.execute([ tool_call("call-1", arguments: { query: "oral history interview" }.to_json) ]) { }
+
+    expect(tool_runner).to have_received(:call).with(
+      name: "search_passages", arguments: { "query" => "oral history interview" }
+    )
+    expect(tool_runner).not_to have_received(:call).with(
+      name: "search_passages", arguments: { "query" => "Is there anything about this topic outside the collection I filtered to?" }
+    )
+  end
+
   it "returns a tool response for every call when the execution limit is reached" do
     allow(Rails.configuration.x.chat).to receive(:max_tool_calls).and_return(1)
     allow(tool_runner).to receive(:call).and_return(text: "Result", structured_content: {})

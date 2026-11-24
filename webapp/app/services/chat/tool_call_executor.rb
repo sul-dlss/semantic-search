@@ -5,11 +5,14 @@ require "json"
 module Chat
   # Executes model-requested tools and returns messages suitable for the next completion.
   class ToolCallExecutor
-    def initialize(tool_runner:, source_collection:, question:, result_compactor: nil, context_filters: {})
+    # @param search_context [Boolean] whether the conversation started from a search results page
+    def initialize(tool_runner:, source_collection:, question:, result_compactor: nil, context_filters: {},
+                   search_context: false)
       @tool_runner = tool_runner
       @source_collection = source_collection
       @question = question
       @context_filters = context_filters || {}
+      @search_context = search_context
       @call_count = 0
       @discovery_performed = false
       @result_compactor = result_compactor || ToolResultCompactor.new(
@@ -82,7 +85,11 @@ module Chat
       )
     end
 
+    # A question asked about a carried search ("is there anything about this topic outside my
+    # filter?") points at that search instead of naming its subject, so only the model's query,
+    # written with the search in view, is worth searching for.
     def initial_discovery_query(requested_arguments)
+      return requested_arguments["query"].presence || @question if @search_context
       return @question if @question.strip.match?(/\A(?:who|what|when|where|why|how|which|whose|is|are|was|were|do|does|did|can|could|would|should|will|has|have|had)\b[^.!?]*\?\z/i)
 
       requested_arguments["query"].presence || @question

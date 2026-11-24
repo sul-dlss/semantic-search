@@ -27,7 +27,8 @@ module Chat
         tool_runner: tool_runner || ToolRunner.new(controller: controller),
         source_collection: @sources,
         question: @history.last_user_content,
-        context_filters: search_context&.tool_filters || {}
+        context_filters: search_context&.tool_filters || {},
+        search_context: search_context.present?
       )
     end
 
